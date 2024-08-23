@@ -1,0 +1,246 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>Image Puzzle</title>
+<style type="text/css">
+  html {touch-action: none;}
+</style>
+<script>
+  const titleHeightRel = 0.08;
+  const tileGap = 2;
+
+  class SettingsWidgets {
+
+    getSelectedData() {
+      return this.data[this.selectedIndex];
+    }
+
+    offsetSelectedIndex(o) {
+      this.selectedIndex = (this.selectedIndex + this.data.length + o) % this.data.length;
+    }
+
+    drawArrow(ctx, dir, x, y, a) {
+      ctx.beginPath();
+      ctx.lineWidth = tileGap;
+      ctx.lineCap = "round";
+      ctx.moveTo(x + (0.5 + 0.4 * dir) * a, y + 0.25 * a);
+      ctx.lineTo(x + 0.5 * a, y + 0.5 * a);
+      ctx.lineTo(x + (0.5 + 0.4 * dir)  * a, y + 0.75 * a);
+      ctx.stroke();
+    }
+
+    draw(ctx, width) {
+      const titleHeight = titleHeightRel * width;
+      const a = titleHeight - 2 * tileGap;
+      this.drawArrow(ctx, 1, this.relOffX * width, tileGap, a,);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = Math.floor(0.5 * (titleHeight - 2 * tileGap)) + "px sans serif";
+      const dataString = this.getSelectedDataString();
+      ctx.fillText(dataString, (this.relOffX + 0.25) * width, 0.5 * titleHeight);
+      this.drawArrow(ctx, -1, (this.relOffX + 0.5) * width - tileGap - a, tileGap, a);
+    }
+
+    handleClick(x, y, width) {
+      const titleHeight = titleHeightRel * width;
+      const a = titleHeight - 2 * tileGap;
+      if (y < tileGap || y > titleHeight - tileGap)
+        return;
+      if (x >= this.relOffX * width && x <= this.relOffX * width + titleHeight - 2 * tileGap) {
+        this.offsetSelectedIndex(-1);
+        return true;
+      }
+      if (x >= (this.relOffX + 0.5) * width - tileGap - a && x <= (this.relOffX +  0.5) * width) {
+        this.offsetSelectedIndex(1);
+        return true;
+      }
+      return false;
+    }
+  }
+
+  class ImageWidgets extends SettingsWidgets {
+    constructor() {
+      super();
+      this.data = ["boat", "jumper", "parrot"];
+      this.selectedIndex = 0;
+      this.relOffX = 0;
+    }
+
+    getSelectedDataString() {
+      return this.data[this.selectedIndex].toUpperCase();
+    }
+  }
+
+  class TileWidgets extends SettingsWidgets {
+    constructor() {
+      super();
+      this.data = [[3, 2], [3, 3], [4, 3], [4, 4], [5, 4], [6, 4]];
+      this.selectedIndex = 0;
+      this.relOffX = 0.5;
+    }
+
+    getSelectedDataString() {
+      return this.data[this.selectedIndex][0] + " x " + this.data[this.selectedIndex][1];
+    }
+
+  }
+
+  class GameState {
+    constructor (numSwaps) {
+      this.numSwaps = numSwaps;
+      this.imageWidgets = new ImageWidgets();
+      this.tileWidgets = new TileWidgets();
+      this.widgets = [this.imageWidgets, this.tileWidgets];
+    }
+
+    init() {
+      const rowsCols = this.tileWidgets.getSelectedData();
+      this.numRows = rowsCols[0];
+      this.numCols = rowsCols[1];
+      this.numTiles = this.numRows * this.numCols;
+      this.puzzleFinished = false;
+      this.tileMap = new Array(this.numTiles);
+      for (let col = 0; col != this.numCols; ++col) {
+        for (let row = 0; row != this.numRows; ++row) {
+          const i = row + col * this.numRows;
+          this.tileMap[i] = i;
+        }
+      }
+      this.emptyPos = this.numTiles - 1;
+      this.tileMap[this.emptyPos] = -1;
+      this.performRandomSwaps();
+    }
+
+    performRandomSwaps() {
+      for (let swap = 0; swap != this.numSwaps; ++swap) {
+        let otherPosList = [this.emptyPos - 1, this.emptyPos + 1,
+          this.emptyPos - this.numRows, this.emptyPos + this.numRows];
+        otherPosList = otherPosList.filter(i => i >= 0 && i < this.numTiles);
+        const i = Math.floor(Math.random() * otherPosList.length);
+        this.swapEmptyPos(otherPosList[i]);
+      }
+    }
+
+    isEmptyPosNeighbor(otherPos) {
+      const otherCol = Math.floor(otherPos / this.numRows);
+      const otherRow = otherPos - otherCol * this.numRows;
+      const emptyCol = Math.floor(this.emptyPos / this.numRows);
+      const emptyRow = this.emptyPos - emptyCol * this.numRows;
+      const d = Math.abs(emptyRow - otherRow) + Math.abs(emptyCol - otherCol);
+      return d == 1;
+    }
+
+    swapEmptyPos(otherPos) {
+      if (!this.isEmptyPosNeighbor(otherPos))
+        return;
+      this.tileMap[this.emptyPos] = this.tileMap[otherPos];
+      this.tileMap[otherPos] = -1;
+      this.emptyPos = otherPos;
+    }
+
+    draw() {
+      const canvas = document.getElementById("imageCanvas");
+      const ctx = canvas.getContext("2d");
+      const img = new Image();
+      img.onload = () => {
+        const sWidth = img.width / this.numCols;
+        const sHeight = img.height / this.numRows;
+        const scale = Math.min(window.innerWidth / img.width, window.innerHeight / img.height);
+        canvas.width = scale * img.width;
+        canvas.height = scale * img.height;
+        const titleHeight = titleHeightRel * canvas.width;
+        const left = 0.5 * (window.innerWidth - canvas.width);
+        canvas.setAttribute("style", "position: absolute; top: 0px; left: " + left + "px;");
+        ctx.font = Math.floor(0.8 * titleHeight) + "px sans serif";
+        for (let widget of this.widgets) {
+          widget.draw(ctx, canvas.width);
+        }
+        const dWidth = (canvas.width - tileGap * (this.numCols - 1)) / this.numCols;
+        const dHeight = (canvas.height - titleHeight - tileGap * (this.numRows - 1)) / this.numRows;
+        for (let col = 0; col != this.numCols; ++col) {
+          for (let row = 0; row != this.numRows; ++row) {
+            const i = row + col * this.numRows;
+            const j = this.puzzleFinished ? i : this.tileMap[i];
+            if (j < 0) {
+              continue;
+            }
+            const sCol = Math.floor(j / this.numRows);
+            const sRow = j - sCol * this.numRows;
+            const sx = sWidth * sCol;
+            const sy = sHeight * sRow;
+            const dx = (dWidth + tileGap) * col;
+            const dy = (dHeight + tileGap) * row + titleHeight;
+            ctx.drawImage(img, sx, sy, sWidth, sHeight,
+                               dx, dy, dWidth, dHeight);
+          }
+        }
+      }
+      img.src = this.imageWidgets.getSelectedData() + ".jpeg";
+    }
+
+    checkPuzzleFinished() {
+      let allTilesCorrect = true;
+      for (let i = 0; i != this.numTiles; ++i) {
+        if (i != this.emptyPos && this.tileMap[i] != i) {
+          allTilesCorrect = false;
+        }
+      }
+     this.puzzleFinished = allTilesCorrect;
+    }
+
+    handleClick(e) {
+      let x = e.offsetX;
+      let y = e.offsetY;
+      const canvas = document.getElementById("imageCanvas");
+      for (let widget of this.widgets) {
+        if (widget.handleClick(x, y, canvas.width)) {
+          this.init();
+          this.draw();
+          return;
+        }
+      }
+      if (this.puzzleFinished)
+        return;
+      const titleHeight = titleHeightRel * canvas.width;
+      const tileWidth = (canvas.width - tileGap * (this.numCols - 1)) / this.numCols;
+      const tileHeight = (canvas.height - titleHeight - tileGap * (this.numRows - 1)) / this.numRows;
+      y -= titleHeight;
+      const col = Math.floor(x / (tileWidth + tileGap));
+      const row = Math.floor(y / (tileHeight + tileGap));
+      x -= col * (tileWidth + tileGap);
+      y -= row * (tileHeight + tileGap);
+      const inTile = x < tileWidth && y < tileHeight;
+      if (inTile) {
+        const i = row + col * this.numRows;
+        if (this.isEmptyPosNeighbor(i)) {
+          this.swapEmptyPos(i);
+          this.checkPuzzleFinished();
+          this.draw();
+        }
+      }
+    }
+
+    handleDoubleClick(e) {
+      if (this.puzzleFinished) {
+        this.init();
+        this.draw();
+      }
+    }
+  }
+
+  const gameState = new GameState(96);
+  function initGame() {
+    const canvas = document.getElementById("imageCanvas");
+    gameState.init();
+    gameState.draw();
+    canvas.addEventListener("click", e => gameState.handleClick(e));
+    canvas.addEventListener("dblclick", e => gameState.handleDoubleClick(e));
+    window.addEventListener("resize", _ => gameState.draw());
+  }
+  document.addEventListener("DOMContentLoaded", initGame);
+</script>
+</head>
+<body style="margin: 0px">
+<canvas id="imageCanvas"></canvas>
+</body>
+</html>
