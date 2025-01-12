@@ -7,7 +7,7 @@
 </style>
 <script>
   const titleHeightRel = 0.08;
-  const tileGap = 2;
+  const tileGap = 4;
 
   class SettingsWidgets {
 
@@ -61,7 +61,8 @@
   class ImageWidgets extends SettingsWidgets {
     constructor() {
       super();
-      this.data = ["boat", "jumper", "parrot"];
+      this.data = ["child", "jumper", "boat", "houses",
+                   "bikes", "lighthouse", "rafting", "parrot"];
       this.selectedIndex = 0;
       this.relOffX = 0;
     }
@@ -74,8 +75,8 @@
   class TileWidgets extends SettingsWidgets {
     constructor() {
       super();
-      this.data = [[3, 2], [3, 3], [4, 3], [4, 4], [5, 4], [6, 4]];
-      this.selectedIndex = 0;
+      this.data = [[4, 3], [5, 3], [6, 4], [7, 5], [8, 5], [9, 6]];
+      this.selectedIndex = 2;
       this.relOffX = 0.5;
     }
 
@@ -143,31 +144,50 @@
       const ctx = canvas.getContext("2d");
       const img = new Image();
       img.onload = () => {
-        const sWidth = img.width / this.numCols;
-        const sHeight = img.height / this.numRows;
-        const scale = Math.min(window.innerWidth / img.width, window.innerHeight / img.height);
+
+        // Set the width, height and absolute position of the canvas.
+        const scale = Math.min(window.innerWidth / img.width,
+                               window.innerHeight / (img.height + titleHeightRel * img.width));
         canvas.width = scale * img.width;
-        canvas.height = scale * img.height;
+        canvas.height = scale * (img.height + titleHeightRel * img.width);
         const titleHeight = titleHeightRel * canvas.width;
         const left = 0.5 * (window.innerWidth - canvas.width);
-        canvas.setAttribute("style", "position: absolute; top: 0px; left: " + left + "px;");
+        const top = 0.5 * (window.innerHeight - canvas.height);
+        canvas.setAttribute("style", "position: absolute; top: " + top + "px; left: " + left + "px;");
         ctx.font = Math.floor(0.8 * titleHeight) + "px sans serif";
         for (let widget of this.widgets) {
           widget.draw(ctx, canvas.width);
         }
+
+        // Draw the entire image without gaps when the puzzle is finished.
+        if (this.puzzleFinished)
+        {
+          ctx.drawImage(img, 0, 0, img.width, img.height,
+                             0, titleHeight, canvas.width, canvas.height - titleHeight);
+          return;
+        }
+
+        // Width and height of tiles in the source image.
+        const sTileGap = tileGap / scale;
+        const sWidth = (img.width - sTileGap * (this.numCols - 1)) / this.numCols;
+        const sHeight = (img.height - sTileGap * (this.numRows - 1)) / this.numRows;
+
+        // Width and height of tiles in the destination canvas.
         const dWidth = (canvas.width - tileGap * (this.numCols - 1)) / this.numCols;
         const dHeight = (canvas.height - titleHeight - tileGap * (this.numRows - 1)) / this.numRows;
+
+        // Draw tiles.
         for (let col = 0; col != this.numCols; ++col) {
           for (let row = 0; row != this.numRows; ++row) {
             const i = row + col * this.numRows;
-            const j = this.puzzleFinished ? i : this.tileMap[i];
+            const j = this.tileMap[i];
             if (j < 0) {
               continue;
             }
             const sCol = Math.floor(j / this.numRows);
             const sRow = j - sCol * this.numRows;
-            const sx = sWidth * sCol;
-            const sy = sHeight * sRow;
+            const sx = (sWidth + sTileGap) * sCol;
+            const sy = (sHeight + sTileGap) * sRow;
             const dx = (dWidth + tileGap) * col;
             const dy = (dHeight + tileGap) * row + titleHeight;
             ctx.drawImage(img, sx, sy, sWidth, sHeight,
@@ -220,6 +240,7 @@
       }
     }
 
+    // Restart a finished puzzle after a double click.
     handleDoubleClick(e) {
       if (this.puzzleFinished) {
         this.init();
@@ -228,7 +249,7 @@
     }
   }
 
-  const gameState = new GameState(96);
+  const gameState = new GameState(200 /* random swaps */);
   function initGame() {
     const canvas = document.getElementById("imageCanvas");
     gameState.init();
