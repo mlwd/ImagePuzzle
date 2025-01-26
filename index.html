@@ -19,6 +19,20 @@
       this.selectedIndex = (this.selectedIndex + this.data.length + o) % this.data.length;
     }
 
+    getSelectedDataString() {
+      return this.getDataStringAtIndex(this.selectedIndex);
+    }
+
+    setSelectedData(dataString) {
+      for (let i = 0; i < this.data.length; ++i) {
+        if (this.getDataStringAtIndex(i) == dataString) {
+          this.selectedIndex = i;
+          return true;
+        }
+      }
+      return false;
+    }
+
     drawArrow(ctx, dir, x, y, a) {
       ctx.beginPath();
       ctx.lineWidth = tileGap;
@@ -67,8 +81,8 @@
       this.relOffX = 0;
     }
 
-    getSelectedDataString() {
-      return this.data[this.selectedIndex].toUpperCase();
+    getDataStringAtIndex(i) {
+      return this.data[i].toUpperCase();
     }
   }
 
@@ -80,40 +94,83 @@
       this.relOffX = 0.5;
     }
 
-    getSelectedDataString() {
-      return this.data[this.selectedIndex][0] + " x " + this.data[this.selectedIndex][1];
+    getDataStringAtIndex(i) {
+      return this.data[i][0] + " x " + this.data[i][1];
     }
-
   }
 
   class GameState {
-    constructor (numSwaps) {
-      this.numSwaps = numSwaps;
+    constructor () {
       this.imageWidgets = new ImageWidgets();
       this.tileWidgets = new TileWidgets();
       this.widgets = [this.imageWidgets, this.tileWidgets];
+      const tileMapFromLocalStorage = this.loadFromLocalStorage();
+      this.init(tileMapFromLocalStorage);
     }
 
-    init() {
+    init(keepTileMap) {
       const rowsCols = this.tileWidgets.getSelectedData();
       this.numRows = rowsCols[0];
       this.numCols = rowsCols[1];
       this.numTiles = this.numRows * this.numCols;
-      this.puzzleFinished = false;
-      this.tileMap = new Array(this.numTiles);
-      for (let col = 0; col != this.numCols; ++col) {
-        for (let row = 0; row != this.numRows; ++row) {
-          const i = row + col * this.numRows;
-          this.tileMap[i] = i;
+      if (!keepTileMap) {
+        this.tileMap = new Array(this.numTiles);
+        for (let col = 0; col != this.numCols; ++col) {
+          for (let row = 0; row != this.numRows; ++row) {
+            const i = row + col * this.numRows;
+            this.tileMap[i] = i;
+          }
         }
+        this.emptyPos = this.numTiles - 1;
+        this.tileMap[this.emptyPos] = -1;
+        this.performRandomSwaps();
+        this.saveToLocalStorage();
       }
-      this.emptyPos = this.numTiles - 1;
-      this.tileMap[this.emptyPos] = -1;
-      this.performRandomSwaps();
+    }
+
+    saveToLocalStorage() {
+      const gameState = {"tile": this.tileWidgets.getSelectedDataString(),
+                         "image": this.imageWidgets.getSelectedDataString(),
+                         "tileMap": this.tileMap};
+      window.localStorage.setItem("ImagePuzzle", JSON.stringify(gameState));
+    }
+
+    loadFromLocalStorage() {
+      let tileMapFromLocalStorage = false;
+      const gameStateJson = window.localStorage.getItem("ImagePuzzle");
+      if (gameStateJson) {
+         let gameState;
+         try {
+           gameState = JSON.parse(gameStateJson);
+         } catch {
+           console.log("Game state could not be parsed.");
+           return;
+         }
+         if (gameState.tile) {
+           const rowsColsAccepted = this.tileWidgets.setSelectedData(gameState.tile);
+           console.log({rowsColsAccepted});
+           if (gameState.tileMap) {
+             this.tileMap = gameState.tileMap;
+             // Determine the position of the empty tile.
+             for (let i = 0; i < this.tileMap.length; ++i) {
+               if (this.tileMap[i] == -1) {
+                 this.emptyPos = i;
+                 break;
+               }
+             }
+             tileMapFromLocalStorage = true;
+           }
+         }
+         if (gameState.image) {
+           this.imageWidgets.setSelectedData(gameState.image);
+         }
+      }
+      return tileMapFromLocalStorage;
     }
 
     performRandomSwaps() {
-      for (let swap = 0; swap != this.numSwaps; ++swap) {
+      const numSwaps = 10 * this.numRows * this.numCols;
+      for (let swap = 0; swap != numSwaps; ++swap) {
         let otherPosList = [this.emptyPos - 1, this.emptyPos + 1,
           this.emptyPos - this.numRows, this.emptyPos + this.numRows];
         otherPosList = otherPosList.filter(i => i >= 0 && i < this.numTiles);
@@ -160,7 +217,7 @@
         }
 
         // Draw the entire image without gaps when the puzzle is finished.
-        if (this.puzzleFinished)
+        if (this.checkPuzzleFinished())
         {
           ctx.drawImage(img, 0, 0, img.width, img.height,
                              0, titleHeight, canvas.width, canvas.height - titleHeight);
@@ -199,28 +256,32 @@
     }
 
     checkPuzzleFinished() {
-      let allTilesCorrect = true;
       for (let i = 0; i != this.numTiles; ++i) {
         if (i != this.emptyPos && this.tileMap[i] != i) {
-          allTilesCorrect = false;
+          return false;
         }
       }
-     this.puzzleFinished = allTilesCorrect;
+     return true;
     }
 
     handleClick(e) {
       let x = e.offsetX;
       let y = e.offsetY;
       const canvas = document.getElementById("imageCanvas");
+
+      // Allow one of the widgets to handle this click.
       for (let widget of this.widgets) {
         if (widget.handleClick(x, y, canvas.width)) {
-          this.init();
+          this.init(false);
           this.draw();
           return;
         }
       }
-      if (this.puzzleFinished)
+
+      if (this.checkPuzzleFinished())
         return;
+
+      // Use click to change the position of a tile.
       const titleHeight = titleHeightRel * canvas.width;
       const tileWidth = (canvas.width - tileGap * (this.numCols - 1)) / this.numCols;
       const tileHeight = (canvas.height - titleHeight - tileGap * (this.numRows - 1)) / this.numRows;
@@ -234,25 +295,24 @@
         const i = row + col * this.numRows;
         if (this.isEmptyPosNeighbor(i)) {
           this.swapEmptyPos(i);
-          this.checkPuzzleFinished();
           this.draw();
+          this.saveToLocalStorage();
         }
       }
     }
 
     // Restart a finished puzzle after a double click.
     handleDoubleClick(e) {
-      if (this.puzzleFinished) {
-        this.init();
+      if (this.checkPuzzleFinished()) {
+        this.init(false);
         this.draw();
       }
     }
   }
 
-  const gameState = new GameState(200 /* random swaps */);
+  const gameState = new GameState();
   function initGame() {
     const canvas = document.getElementById("imageCanvas");
-    gameState.init();
     gameState.draw();
     canvas.addEventListener("click", e => gameState.handleClick(e));
     canvas.addEventListener("dblclick", e => gameState.handleDoubleClick(e));
